@@ -1,68 +1,408 @@
-import can
+import isotp
+import time
+import secrets
 
 
-def run_ecu(bus_ecu, stop_event):
-    while not stop_event.is_set():
-        message = bus_ecu.recv(timeout=0.1)
+address = isotp.Address(
+    isotp.AddressingMode.Normal_11bits,
+    txid=0x708,
+    rxid=0x700
+)
 
-        if message is not None:
-            print(message)
+class BatteryECU:
 
-            if message.arbitration_id == 0x700:
+    def __init__(self):
 
-                if len(message.data) >= 3:
+        self.current_session = 0x01
+        self.dispatch_table = {
+            0x10: self.handle_diagnostic_session,
+            0x22: self.handle_read_data_by_identifier,
+            0x11: self.handle_ecu_reset,
+            0x2E: self.handle_write_data_by_identifier,
+            0x3E: self.handle_tester_present,
+            0x27: self.handle_security_access,
+            0x31: self.handle_routine_control,
+            0x19: self.handle_read_dtc_information,
+            0x14: self.handle_clear_diagnostic_information,
+            }
+        self.did_data = {
+            0xF190: b"TESTVIN1234567890",
+            }
+        self.last_activity = time.monotonic()
+        self.s3_timeout = 2.0
+        self.security_seed = None
+        self.security_unlocked = False
+        self.routine_status = "NOT_STARTED"
+        self.fault_active = False
 
-                    if message.data[0] == 0x02:
+        self.dtc_store = {}
 
-                        if message.data[1] == 0x10:
-                            if message.data[2] == 0x03:
+    def relock_security(self):
+        self.security_unlocked = False
+        self.security_seed = None
 
-                                arbitration_id = 0x708
-                                data = bytes([0x02, 0x50, 0x03])
+    def reset_volatile_state(self):
 
-                                response = can.Message(
-                                    is_extended_id=False,
-                                    arbitration_id=arbitration_id,
-                                    data=data
-                                )
-                                
-                                bus_ecu.send(msg=response)
+        self.current_session = 0x01
+        self.relock_security()
+        self.routine_status = "NOT_STARTED"
+        self.fault_active = False
+
+    def monitor_faults(self):
+
+        dtc_code = b"\x12\x34\x56"
+        if self.fault_active:
+            if dtc_code not in self.dtc_store:
+                self.dtc_store[dtc_code] = {"confirmed" : True }
+
+
+
+    def handle_diagnostic_session(self,request):
+
+        if len(request) == 2:
+
+            if request[0] == 0x10:
+
+                if request[1] == 0x01:
+                
+                    self.current_session = 0x01
+                    self.relock_security()
+                    return bytes([0x50, 0x01, 0x00, 0x32, 0x01, 0xF4])
+                 
+                elif request[1] == 0x03:
+
+                    self.current_session = 0x03
+                    return bytes([0x50, 0x03, 0x00, 0x32, 0x01, 0xF4])                      
+
+                else:
+
+                    return bytes([0x7F, 0x10, 0x12])       
+        
+        else:
+
+            return bytes([0x7F, 0x10, 0x13])
+
+
+    def handle_read_data_by_identifier(self,request):
+
+        if len(request) == 3:
+
+            if request[0] == 0x22:
+
+                DID = request[1] << 8 | request[2]
+
+                if DID == 0xF186:
+                    
+                    response = bytes([0x62, DID >> 8, DID & 0xFF, self.current_session])
+                    return response
+                
+                
+                info = self.did_data.get(DID)
+
+                if info is not None:
+
+                    header = bytes([0x62, DID >> 8, DID & 0xFF])
+                    response = header + info
+                    return response
+
+                else:
+
+                    return bytes([0x7F, 0x22, 0x31])     
+                        
+        else:
+            return bytes([0x7F, 0x22, 0x13]) 
+
+    def handle_write_data_by_identifier(self,request):
+
+        if len(request) >= 5:
+        
+            if request[0] == 0x2E:
+
+                DID = request[1] << 8 | request[2]
+                data = request[3:]
+                
+                if DID == 0xF1A0:
+
+                    self.did_data[DID] = data                
+                    response = bytes([0x6E, 0xF1, 0xA0])
+                    return response
+
+                else:
+                    return bytes([0x7F, 0x2E, 0x31])
+
+        else:
+            return bytes([0x7F, 0x2E, 0x13])
+
+    def handle_tester_present(self, request):
+
+        if len(request) == 2:
+        
+            if request[0] == 0x3E:
+
+                if request[1] == 0x00:
+                
+                    return bytes([0x7E, 0x00])                      
+
+                else:
+
+                    return bytes([0x7F, 0x3E, 0x12])       
+        
+        else:
+
+            return bytes([0x7F, 0x3E, 0x13])
+
+
+    def handle_ecu_reset(self,request):
+        
+        if len(request) == 2:
+        
+            if request[0] == 0x11:
+
+                if request[1] == 0x01:
+
+                    self.reset_volatile_state()
+                    return bytes([0x51, 0x01])                      
+
+                else:
+
+                    return bytes([0x7F, 0x11, 0x12])       
+            
+        else:
+
+            return bytes([0x7F, 0x11, 0x13])
+
+    def handle_security_access(self,request):
+
+        if len(request) >= 2:
+
+            if request[0] == 0x27:
+
+                if request[1] == 0x01:
+
+                    if len(request) == 2:
+                
+                        self.security_unlocked = False
+                        self.security_seed = secrets.token_bytes(2)
+                        handler = bytes([0x67, 0x01])
+                        response = handler + self.security_seed
+                        return response
+
+                    else:
+
+                        return bytes([0x7F, 0x27, 0x13])
+
+                elif request[1] == 0x02:
+
+                    if len(request) == 4:
+
+                        if self.security_seed is not None:
+                        
+                            expected_key = (self.security_seed[0] << 8 | self.security_seed[1]) ^ 0xFFFF
+                            key = request[2] << 8 | request[3]
+
+                            if expected_key == key:
+
+                                self.security_unlocked = True
+                                self.security_seed = None
+                                return bytes([0x67, 0x02])  
 
                             else:
 
-                                arbitration_id = 0x708
-                                data = bytes([0x03, 0x7F, 0x10, 0x12])
+                                self.security_unlocked = False
+                                self.security_seed = None
+                                return bytes([0x7F, 0x27, 0x35]) 
 
-                                response = can.Message(
-                                    is_extended_id=False,
-                                    arbitration_id=arbitration_id,
-                                    data=data
-                                )
-                                
-                                bus_ecu.send(msg=response)
+                        else:
 
-                        elif message.data[1] == 0x22:
-
-                            arbitration_id = 0x708
-                            data = bytes([0x03, 0x7F, 0x22, 0x11])
-
-                            response = can.Message(
-                                is_extended_id=False,
-                                arbitration_id=arbitration_id,
-                                data=data
-                            )
-                            
-                            bus_ecu.send(msg=response)
-
+                            return bytes([0x7F, 0x27, 0x24])
 
                     else:
-                        print("Unexpected PCI/Length byte")
-                
+
+                        return bytes([0x7F, 0x27, 0x13])
+
                 else:
-                    print("Short/malformed request received")
+
+                    return bytes([0x7F, 0x27, 0x12])
             
-            else:
-                print("Unexpected CAN ID received")
+        else:
+            
+            return bytes([0x7F, 0x27, 0x13])
+
+
+    def handle_routine_control(self, request):
+
+        if len(request) == 4:
+                
+            if request[0] == 0x31:
+
+                RID = request[2] << 8 | request[3]
+
+                if request[1] == 0x01:
+
+                    if self.routine_status == "NOT_STARTED":
+
+                        if RID == 0xFF00:
+
+                            # The routine is simulated synchronously: it transitions from RUNNING to COMPLETED immediately, 
+                            # rather than performing a real time-consuming operation.
+                            self.routine_status = "RUNNING"
+                            self.routine_status = "COMPLETED"
+
+                            self.fault_active = True
+                            return bytes([0x71, 0x01, 0xFF, 0x00])   
+
+                        else:
+
+                            return bytes([0x7F, 0x31, 0x31])                  
+
+                    else:
+
+                        return bytes([0x7F, 0x31, 0x24])
+
+                elif request[1] == 0x02:
+
+                    if self.routine_status == "RUNNING":
+
+                        if RID == 0xFF00:
+
+                            self.routine_status = "STOPPED"
+                            return bytes([0x71, 0x02, 0xFF, 0x00])    
+
+                        else:
+
+                            return bytes([0x7F, 0x31, 0x31])                  
+
+                    else:
+
+                        return bytes([0x7F, 0x31, 0x24])
+
+                elif request[1] == 0x03:
+
+                    if self.routine_status == "COMPLETED":
+
+                        if RID == 0xFF00:
+
+                            return bytes([0x71, 0x03, 0xFF, 0x00, 0x01])    
+
+                        else:
+
+                            return bytes([0x7F, 0x31, 0x31])
+
+                    elif self.routine_status == "RUNNING":
+
+                        if RID == 0xFF00:
+
+                            return bytes([0x71, 0x03, 0xFF, 0x00, 0x00])    
+
+                        else:
+
+                            return bytes([0x7F, 0x31, 0x31])                  
+
+                    else:
+
+                        return bytes([0x7F, 0x31, 0x24])
+
+                else:
+
+                    return bytes([0x7F, 0x31, 0x12])       
+            
+        else:
+
+            return bytes([0x7F, 0x31, 0x13])
+
+
+    def handle_read_dtc_information(self, request):
+
+        if len(request) == 3:
+                        
+            if request[0] == 0x19:
+
+                if request[1] == 0x02:
+
+                    response = []
+
+                    for dtc_code, record in self.dtc_store.items():
+
+                        test_failed = 0x01 if self.fault_active else 0x00
+                        confirmed = 0x08 if record["confirmed"] else 0x00
+
+                        status = test_failed | confirmed
+
+                        if (status & request[2]) != 0:
+
+                            dtc_record = dtc_code + bytes([status])
+                            response.append(dtc_record)
+
+                    return bytes([0x59, 0x02, 0x09]) + b"".join(response)
+
+                else:
+                
+                    return bytes([0x7F, 0x19, 0x12])
 
         else:
-            continue
+        
+            return bytes([0x7F, 0x19, 0x13])
+
+    def handle_clear_diagnostic_information(self, request):
+
+        if len(request) == 4:
+                                
+            if request[0] == 0x14:
+
+                if request[1:] == b"\xFF\xFF\xFF":
+
+                    self.dtc_store.clear()
+                    return bytes([0x54])
+
+                else:
+                                
+                    return bytes([0x7F, 0x14, 0x31])
+
+        else:
+                
+            return bytes([0x7F, 0x14, 0x13])
+    
+
+
+       
+    def run_ecu(self,bus_ecu, stop_event, inbox):
+
+        stack = isotp.CanStack(bus=bus_ecu, address=address)
+
+        try:
+            stack.start()
+
+            while not stop_event.is_set():
+                
+                payload = stack.recv(block=True, timeout=0.1)
+
+                if payload is not None:
+
+                    self.last_activity = time.monotonic()
+
+                    inbox.put(payload)
+
+                    handler = self.dispatch_table.get(payload[0])
+
+                    if handler is not None:
+
+                        data = handler(request=payload)
+                        stack.send(data=data)
+
+                    else:
+                        data = bytes([0x7F, payload[0], 0x11])
+                        stack.send(data=data)
+
+                self.monitor_faults()
+
+                if self.current_session == 0x03:
+
+                    elapsed_time = time.monotonic() - self.last_activity
+
+                    if elapsed_time >= self.s3_timeout:
+
+                        self.current_session = 0x01
+                        self.relock_security()
+
+        finally:
+            stack.stop()
