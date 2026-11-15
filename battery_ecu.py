@@ -25,6 +25,44 @@ class BatteryECU:
             0x19: self.handle_read_dtc_information,
             0x14: self.handle_clear_diagnostic_information,
             }
+        self.gate_policy = {
+            0x10: {
+                "sessions": [0x01, 0x03],
+                "security_required": False
+            },
+            0x22:{
+                "sessions": [0x01, 0x03],
+                "security_required": False
+            },
+            0x11:{
+                "sessions": [0x01, 0x03],
+                "security_required": False
+            },
+            0x2E: {
+                "sessions": [0x03],
+                "security_required": True
+            },
+            0x3E:{
+                "sessions": [0x01, 0x03],
+                "security_required": False
+            },
+            0x27:{
+                "sessions": [0x03],
+                "security_required": False
+            },
+            0x31: {
+                "sessions": [0x03],
+                "security_required": True
+            },
+            0x19:{
+                "sessions": [0x01, 0x03],
+                "security_required": False
+            },
+            0x14:{
+                "sessions": [0x01, 0x03],
+                "security_required": False
+            }
+            }
         self.did_data = {
             0xF190: b"TESTVIN1234567890",
             }
@@ -53,9 +91,33 @@ class BatteryECU:
         dtc_code = b"\x12\x34\x56"
         if self.fault_active:
             if dtc_code not in self.dtc_store:
-                self.dtc_store[dtc_code] = {"confirmed" : True }
+                self.dtc_store[dtc_code] = {"confirmed" : True } 
 
+    def check_s3_timeout(self):
 
+        if self.current_session == 0x03:
+
+            elapsed_time = time.monotonic() - self.last_activity
+
+            if elapsed_time >= self.s3_timeout:
+
+                self.current_session = 0x01
+                self.relock_security()  
+
+    def check_request_gates(self,sid):
+
+        if self.current_session in self.gate_policy[sid]["sessions"]:
+
+            if self.gate_policy[sid]["security_required"] and not self.security_unlocked:
+
+                return 0x33
+
+            else:
+
+                return None
+        else:
+
+            return 0x7F
 
     def handle_diagnostic_session(self,request):
 
@@ -239,9 +301,9 @@ class BatteryECU:
 
                 if request[1] == 0x01:
 
-                    if self.routine_status == "NOT_STARTED":
-
-                        if RID == 0xFF00:
+                    if RID == 0xFF00:
+                        
+                        if self.routine_status == "NOT_STARTED":
 
                             # The routine is simulated synchronously: it transitions from RUNNING to COMPLETED immediately, 
                             # rather than performing a real time-consuming operation.
@@ -253,54 +315,48 @@ class BatteryECU:
 
                         else:
 
-                            return bytes([0x7F, 0x31, 0x31])                  
+                            return bytes([0x7F, 0x31, 0x24])                  
 
                     else:
 
-                        return bytes([0x7F, 0x31, 0x24])
+                        return bytes([0x7F, 0x31, 0x31])
 
                 elif request[1] == 0x02:
 
-                    if self.routine_status == "RUNNING":
+                    if RID == 0xFF00:
 
-                        if RID == 0xFF00:
+                        if self.routine_status == "RUNNING":
 
                             self.routine_status = "STOPPED"
                             return bytes([0x71, 0x02, 0xFF, 0x00])    
 
                         else:
 
-                            return bytes([0x7F, 0x31, 0x31])                  
+                            return bytes([0x7F, 0x31, 0x24])                  
 
                     else:
 
-                        return bytes([0x7F, 0x31, 0x24])
+                        return bytes([0x7F, 0x31, 0x31])
 
                 elif request[1] == 0x03:
 
-                    if self.routine_status == "COMPLETED":
+                    if RID == 0xFF00:
 
-                        if RID == 0xFF00:
+                        if self.routine_status == "COMPLETED":
 
-                            return bytes([0x71, 0x03, 0xFF, 0x00, 0x01])    
+                            return bytes([0x71, 0x03, 0xFF, 0x00, 0x01])
 
-                        else:
+                        elif self.routine_status == "RUNNING":
 
-                            return bytes([0x7F, 0x31, 0x31])
-
-                    elif self.routine_status == "RUNNING":
-
-                        if RID == 0xFF00:
-
-                            return bytes([0x71, 0x03, 0xFF, 0x00, 0x00])    
+                            return bytes([0x71, 0x03, 0xFF, 0x00, 0x00])                 
 
                         else:
 
-                            return bytes([0x7F, 0x31, 0x31])                  
+                            return bytes([0x7F, 0x31, 0x24])
 
                     else:
-
-                        return bytes([0x7F, 0x31, 0x24])
+                    
+                        return bytes([0x7F, 0x31, 0x31])
 
                 else:
 
@@ -376,33 +432,36 @@ class BatteryECU:
                 
                 payload = stack.recv(block=True, timeout=0.1)
 
-                if payload is not None:
+                self.check_s3_timeout()
 
+                if payload is not None:
+                    
                     self.last_activity = time.monotonic()
 
                     inbox.put(payload)
 
-                    handler = self.dispatch_table.get(payload[0])
+                    sid = payload[0]
+                    handler = self.dispatch_table.get(sid)
 
                     if handler is not None:
 
-                        data = handler(request=payload)
-                        stack.send(data=data)
+                        nrc = self.check_request_gates(sid=sid)
+
+                        if nrc is not None:
+
+                            data = bytes([0x7F, sid, nrc])
+                            stack.send(data=data)
+
+                        else:
+
+                            data = handler(request=payload)
+                            stack.send(data=data)
 
                     else:
-                        data = bytes([0x7F, payload[0], 0x11])
+                        data = bytes([0x7F, sid, 0x11])
                         stack.send(data=data)
 
                 self.monitor_faults()
-
-                if self.current_session == 0x03:
-
-                    elapsed_time = time.monotonic() - self.last_activity
-
-                    if elapsed_time >= self.s3_timeout:
-
-                        self.current_session = 0x01
-                        self.relock_security()
 
         finally:
             stack.stop()
