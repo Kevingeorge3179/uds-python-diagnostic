@@ -9,17 +9,7 @@ import time
 
 data_1 = bytes([0x10, 0x03])
 
-data_2 = bytes([0x3E, 0x00])
-
 data_3 = bytes([0x27, 0x01])
-
-data_4 = bytes([0x10, 0x03])
-
-data_5 = bytes([0x2E, 0xF1, 0xA0, 0x12, 0x34])
-
-
-
-
 
 
 ecu = BatteryECU()
@@ -39,66 +29,10 @@ ecu_thread = threading.Thread(target=ecu.run_ecu, args=(bus_ecu,stop_event,inbox
 ecu_thread.start()
 
 try:
-
-    tester.run_tester(bus_tester=bus_tester, data=data_1)
-
-    time.sleep(2.1)
-
-    print("\n--- ECU Internal State After S3 Expiry ---")
-    
-    print("Current Session:", hex(ecu.current_session))
-    print("Security Unlocked:", ecu.security_unlocked)
-    print("Security Seed:", ecu.security_seed)
-    print("Routine Status:", ecu.routine_status)
-    print("Fault Active:", ecu.fault_active)
-    print("F1A0 Data:", ecu.did_data.get(0xF1A0))
     
     tester.run_tester(bus_tester=bus_tester, data=data_1)
-
-    time.sleep(1.5)
-
-    tester.run_tester(bus_tester=bus_tester, data=data_2)
-
-    time.sleep(1)
-
-    print("\n--- ECU Internal State ---")
-        
-    print("Current Session:", hex(ecu.current_session))
-    print("Security Unlocked:", ecu.security_unlocked)
-    print("Security Seed:", ecu.security_seed)
-    print("Routine Status:", ecu.routine_status)
-    print("Fault Active:", ecu.fault_active)
-    print("F1A0 Data:", ecu.did_data.get(0xF1A0))
-
-    time.sleep(1.2)
-
-    print("\n--- ECU Internal State ---")
-            
-    print("Current Session:", hex(ecu.current_session))
-    print("Security Unlocked:", ecu.security_unlocked)
-    print("Security Seed:", ecu.security_seed)
-    print("Routine Status:", ecu.routine_status)
-    print("Fault Active:", ecu.fault_active)
-    print("F1A0 Data:", ecu.did_data.get(0xF1A0))
 
     tester.run_tester(bus_tester=bus_tester, data=data_3)
-
-    time.sleep(2.1)
-
-    print("\n--- ECU Internal State After S3 Expiry ---")
-        
-    print("Current Session:", hex(ecu.current_session))
-    print("Security Unlocked:", ecu.security_unlocked)
-    print("Security Seed:", ecu.security_seed)
-    print("Routine Status:", ecu.routine_status)
-    print("Fault Active:", ecu.fault_active)
-    print("F1A0 Data:", ecu.did_data.get(0xF1A0))
-
-    tester.run_tester(bus_tester=bus_tester, data=data_4)
-
-    time.sleep(2.1)
-
-    tester.run_tester(bus_tester=bus_tester, data=data_5)
 
     print("\n--- ECU Internal State ---")
                 
@@ -110,6 +44,7 @@ try:
     print("F1A0 Data:", ecu.did_data.get(0xF1A0))
 
 
+  
 finally:
     stop_event.set()
     ecu_thread.join()

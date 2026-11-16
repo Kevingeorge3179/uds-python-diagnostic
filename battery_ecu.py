@@ -11,7 +11,7 @@ address = isotp.Address(
 
 class BatteryECU:
 
-    def __init__(self):
+    def __init__(self, s3_timeout= 2.0):
 
         self.current_session = 0x01
         self.dispatch_table = {
@@ -67,7 +67,7 @@ class BatteryECU:
             0xF190: b"TESTVIN1234567890",
             }
         self.last_activity = time.monotonic()
-        self.s3_timeout = 2.0
+        self.s3_timeout = s3_timeout
         self.security_seed = None
         self.security_unlocked = False
         self.routine_status = "NOT_STARTED"
