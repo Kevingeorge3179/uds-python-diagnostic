@@ -25,6 +25,26 @@ def ecu_environment():
         inbox = Queue()
 
         ecu = BatteryECU(s3_timeout=0.3)
+        dispatch_table = ecu.dispatch_table
+
+        called_handlers = []
+
+        def make_handler_wrapper(dispatch_table, sid):
+
+            original_handler = dispatch_table.get(sid)
+
+            def wrapper(request):
+
+                called_handlers.append(sid)
+                response = original_handler(request=request)
+
+                return response
+
+            return wrapper
+
+        for sid in dispatch_table.keys():
+
+            dispatch_table[sid] = make_handler_wrapper(dispatch_table=dispatch_table, sid=sid)
 
         ecu_thread = threading.Thread(target=ecu.run_ecu, args=(bus_ecu,stop_event,inbox))
         ecu_thread.start()
@@ -32,7 +52,8 @@ def ecu_environment():
         resources = {
         "ecu": ecu,
         "bus_tester": bus_tester,
-        "inbox": inbox
+        "inbox": inbox,
+        "called_handlers": called_handlers
         }
 
         yield resources
