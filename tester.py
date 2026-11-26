@@ -1,4 +1,8 @@
 import isotp
+from result_validation import validate_common_response,validate_session_response,validate_reset_response,\
+validate_rdbi_response,validate_wdbi_response,validate_tester_present_response,validate_security_seed_response,\
+validate_routine_response,validate_dtc_response,validate_clear_dtc_response
+from result import Result
 
 
 def send_raw(bus_tester, data):
@@ -30,236 +34,114 @@ def send_raw(bus_tester, data):
         if  stack_started and stack is not None:
             stack.stop()
 
+validators = {
+    0x10: validate_session_response,
+    0x11: validate_reset_response,
+    0x22: validate_rdbi_response,
+    0x2E: validate_wdbi_response,
+    0x3E: validate_tester_present_response,
+    0x31: validate_routine_response,
+    0x19: validate_dtc_response,
+    0x14: validate_clear_dtc_response,
+}
+
+def calculate_key(seed):
+
+    key = seed ^ 0xFFFF
+    return key
+
+def unlock(bus_tester):
+
+    request = bytes([0x27, 0x01])
+
+    response = send_raw(bus_tester=bus_tester, data=request)
+
+    common_response_seed = validate_common_response(request=request, response=response)
+
+    if not common_response_seed.ok:
+        return common_response_seed
+
+    result_seed = validate_security_seed_response(request=request, response=response)
+
+    if not result_seed.ok:
+        return result_seed
+
+    seed = result_seed.fields["seed"]
+    key = calculate_key(seed=seed)
+    request_key = bytes([0x27, 0x02, key >>8, key & 0xFF])
+    response_key = send_raw(bus_tester=bus_tester, data=request_key)
+
+    common_response_key = validate_common_response(request=request_key, response=response_key)
+
+    if not common_response_key.ok:
+        return common_response_key
+    
+    if len(response_key) != 2:
+        return Result(ok=False, kind="malformed", message="Malformed key response")
+
+    if response_key[1] != request_key[1]:
+        return Result(ok=False, kind="malformed", message="Subfunction mismatch")
+
+    return Result(ok=True, kind="positive", message="Security unlocked")
+
 def run_tester(bus_tester, data):
+
+    if not data:
+        print("Empty UDS request")
+        return
+
+    if data == bytes([0x27, 0x01]):
+        result = unlock(bus_tester)
+
+        if result.ok:
+            print(result.message)
+
+        else:
+            print(f"Security unlock failed:{result.message}")
+
+        return
+    
+    elif data[0] == 0x27:
+        print("Unsupported UDS request")
+        return
+    
 
     response = send_raw(bus_tester=bus_tester, data=data)
 
-    if response is None:
-        print("No response received from Battery ECU")
+    common_response = validate_common_response(request=data, response=response)
 
-    elif len(response) == 0:
-        print("Empty response received")
+    if not common_response.ok:
+        print(common_response.message)
 
     else:
+        validator = validators.get(data[0])
 
-        if len(response) <=1 and data[0] != 0x14:
-            print("Short/malformed response")
+        if validator is not None:
 
-        elif response[0] == 0x7F:
-            if len(response) >= 3:
-                if response[1] == data[0]:
-                    print(f"Received negative response for requested service. NRC: 0x{response[2]:02X}")
+            result = validator(request=data, response=response)
+            print(result.message)
 
-                else:
-                    print("Negative response received for a different service.")
+            if result.ok:
 
-            else:
-                print("Malformed negative response: missing NRC")
+                if data[0] == 0x10:
+                    print(f"P2_timing: {result.fields['p2_timing']} ms")
+                    print(f"P2_star_timing: {result.fields['p2_star_timing']} ms")
 
-        elif response[0] == 0x50 and data[0] == 0x10:
-            if len(response) == 6:
-                if response[1] == data[1]:
-                    print("Received positive response")
-                    timing_1 = response[2] << 8 | response[3]
-                    timing_2 = response[4] << 8 | response[5]
-                    print(f"P2 Server Max: {timing_1}ms")
-                    print(f"P2* Server Max: {timing_2*10}ms")
-                    
+                elif data[0] == 0x22:
+                    print(f"Response: {result.fields['response']}")
 
-                else:
-                    print("Unexpected UDS response")
+                elif data[0] == 0x31:
+                    print(f"Response: {result.fields['response']}")
 
-            else:
-                print("Unexpected UDS response")
+                elif data[0] == 0x19:
+                    print(f"Availability Mask: {result.fields['Availability Mask']}")
 
-        elif response[0] == 0x51 and data[0] == 0x11:
-            if len(response) == 2:
-                if response[1] == data[1]:
-                    print("Received positive response")
-                    
+                    for dtc in result.fields["dtc_info"]:
+                        dtc_code = dtc["dtc_code"]
+                        dtc_status = dtc["dtc_status"]
 
-                else:
-                    print("Unexpected UDS response")
-
-            else:
-                print("Unexpected UDS response")
-
-        elif response[0] == 0x62 and data[0] == 0x22:
-            if len(response) >= 3:
-                if data[1:3] == response[1:3]:
-                    print("Received positive response")
-                    print(f"{response.hex(' ')}")
-
-                else:
-                    print("Mismatch in DID")
-
-            else:
-                print("Unexpected UDS response")
-
-        elif response[0] == 0x6E and data[0] == 0x2E:
-            if len(response) >= 3:
-                if data[1:3] == response[1:3]:
-                    print("Received positive response")
-                    print(f"{response.hex(' ')}")
-
-                else:
-                    print("Mismatch in DID")
-
-            else:
-                print("Unexpected UDS response")
-
-        elif response[0] == 0x7E and data[0] == 0x3E:
-            if len(response) == 2:
-                if response[1] == 0x00:
-                    print("Received positive response")
-                    print(f"{response.hex(' ')}")
-
-                else:
-                    print("Unexpected UDS response")
-
-            else:
-                print("Unexpected UDS response")
-
-        elif response[0] == 0x67 and data[0] == 0x27:
-            if len(response) == 4:
-                if response[1] == data[1]:
-
-                    print(f"{response.hex(' ')}")
-                    seed = response[2] << 8 | response[3]
-                    key = seed ^ 0xFFFF
-                    request_key = bytes([0x27, 0x02, key >>8, key & 0xFF])
-                    response_key = send_raw(bus_tester=bus_tester, data=request_key)
-
-                    if response_key is None:
-                        print("No response received for Key request from Battery ECU")
-            
-                    elif len(response_key) == 0:
-                        print("Empty response received for key request")
-
-                    else:
-
-                        if len(response_key) <=1:
-                            print("Short/malformed response for key request")
-
-                        elif response_key[0] == request_key[0] + 0x40:
-                            if len(response_key) == 2:
-                                if response_key[1] == request_key[1]:
-                                
-                                    print("Received positive response")
-                                    print(f"{response_key.hex(' ')}")
-
-                                else:
-
-                                    print("Unexpected UDS response")
-
-                            else:
-                                print("Unexpected UDS response")
-
-                        elif response_key[0] == 0x7F:
-                            if len(response_key) >= 3:
-                                if response_key[1] == request_key[0]:
-                                    print(f"Received negative response for requested service. NRC: 0x{response_key[2]:02X}")
-            
-                                else:
-                                    print("Negative response received for a different service.")
-            
-                            else:
-                                print("Malformed negative response: missing NRC")
-
-                        else:
-                            print("Unexpected UDS response")
-
-                else:
-                    print("Unexpected UDS response")
-
-            else:
-                print("Unexpected UDS response")
-
-        elif response[0] == 0x71 and data[0] == 0x31:
-            if len(response) >= 4:
-                if response[1] == 0x01:
-                    if len(response) == 4:
-                        RID = response[2] << 8 | response[3]
-                        if RID == 0xFF00:
-                            print("Received positive response")
-                            print(f"{response.hex(' ')}")
-
-                        else:
-                            print("Unexpected UDS response")
-
-                    else:
-                        print("Unexpected UDS response")
-
-                elif response[1] == 0x02:
-                    if len(response) == 4:
-                        RID = response[2] << 8 | response[3]
-                        if RID == 0xFF00:
-                            print("Received positive response")
-                            print(f"{response.hex(' ')}")
-
-                        else:
-                            print("Unexpected UDS response")
-
-                    else:
-                        print("Unexpected UDS response")
-
-                elif response[1] == 0x03:
-                    if len(response) == 5:
-                        RID = response[2] << 8 | response[3]
-                        if RID == 0xFF00:
-                            if response[4] == 0:
-                                print("Received positive response, Status: RUNNING")
-                                print(f"{response.hex(' ')}")
-
-                            elif response[4] == 1:
-                                print("Received positive response, Status: COMPLETED")
-                                print(f"{response.hex(' ')}")
-
-                            else:
-                                print("Unexpected UDS response")
-
-                        else:
-                            print("Unexpected UDS response")
-
-                    else:
-                        print("Unexpected UDS response")
-
-                else:
-                    print("Unexpected UDS response")
-
-            else:
-                print("Unexpected UDS response")
-
-        elif response[0] == 0x59 and data[0] == 0x19:
-
-            if len(response) >= 3:
-                if response[1] == 0x02:
-                    if (len(response) - 3) % 4 == 0:
-                        availability_mask = response[2]
-                        print("Received positive response")
-                        print(f"Availability Mask: {availability_mask}")
-
-                        for i in range(3, len(response) - 3, 4):
-                            dtc_code = response[i:i+3]
-                            dtc_status = response[i+3]
-                            print(f"DTC_code: {dtc_code.hex(' ')}")
-                            print(f"Status: {dtc_status:02X}")
-
-                    else:
-                        print("Unexpected UDS response")
-
-                else:
-                    print("Unexpected UDS response")
-
-            else:
-                print("Unexpected UDS response")
-
-        elif response[0] == 0x54 and data[0] == 0x14:
-            if len(response) == 1:
-                print("Received positive response")
-
-            else:
-                print("Unexpected UDS response")            
-
+                        print(f"DTC_code: {dtc_code}")
+                        print(f"Status: {dtc_status:02X}")
         else:
-            print("Unexpected UDS response")
+
+            print("Unsupported UDS service")

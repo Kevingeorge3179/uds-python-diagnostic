@@ -1,4 +1,4 @@
-from tester import send_raw
+from tester import send_raw, calculate_key
 import time
 import math
 
@@ -73,7 +73,7 @@ def unlock_security(ecu_environment):
         raise RuntimeError("ECU seed request failed: validation error.") from error
 
     seed = response_1[2] << 8 | response_1[3]
-    key = seed ^ 0xFFFF
+    key = calculate_key(seed=seed)
     request_key = bytes([0x27, 0x02, key >>8, key & 0xFF])
 
     try:
