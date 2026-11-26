@@ -768,10 +768,282 @@ test_case_26 = {
     "expected_handler_calls" : [0x22]
 }
 
+test_case_27 = {
+    "test_id" : "TC-4D-01",
+    "description" : "RoutineControl in Default Session",
+    "session" : "default",
+    "security" : "locked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["31", "01", "FF", "00"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 31 7F"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x01,
+    "security": False,
+    "security_seed": None,
+    "routine_status" : "NOT_STARTED",
+    "fault_active" : False
+    },
+    "expected_handler_calls" : []
+}
+
+test_case_28 = {
+    "test_id" : "TC-4D-02",
+    "description" : "RoutineControl in Extended Session, security locked",
+    "session" : "extended",
+    "security" : "locked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["31", "01", "FF", "00"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 31 33"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x03,
+    "security": False,
+    "security_seed": None,
+    "routine_status" : "NOT_STARTED",
+    "fault_active" : False
+    },
+    "expected_handler_calls" : []
+}
+
+test_case_29 = {
+    "test_id" : "TC-4D-03",
+    "description" : "SecurityAccess in Default Session",
+    "session" : "default",
+    "security" : "locked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["27", "01"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 27 7F"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x01,
+    "security": False,
+    "security_seed": None,
+    },
+    "expected_handler_calls" : []
+}
+
+test_case_30 = {
+    "test_id" : "TC-4D-04",
+    "description" : "Unsupported subfunction for 0x10",
+    "session" : "default",
+    "security" : "locked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["10", "04"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 10 12"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x01,
+    "security": False,
+    "security_seed": None,
+    },
+    "expected_handler_calls" : [0x10]
+}
+
+test_case_31 = {
+    "test_id" : "TC-4D-05",
+    "description" : "Unsupported subfunction for 0x11",
+    "session" : "default",
+    "security" : "locked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["11", "02"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 11 12"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x01,
+    "security": False,
+    "security_seed": None,
+    },
+    "expected_handler_calls" : [0x11]
+}
+
+test_case_32 = {
+    "test_id" : "TC-4D-06",
+    "description" : "Unsupported subfunction for 0x3E",
+    "session" : "default",
+    "security" : "locked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["3E", "01"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 3E 12"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x01,
+    "security": False,
+    "security_seed": None,
+    },
+    "expected_handler_calls" : [0x3E]
+}
+
+test_case_33 = {
+    "test_id" : "TC-4D-07",
+    "description" : "Unsupported subfunction for 0x27",
+    "session" : "extended",
+    "security" : "locked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["27", "03"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 27 12"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x03,
+    "security": False,
+    "security_seed": None,
+    },
+    "expected_handler_calls" : [0x27]
+}
+
+test_case_34 = {
+    "test_id" : "TC-4D-08",
+    "description" : "Read VIN using 22 F1 90",
+    "session" : "default",
+    "security" : "locked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["22", "F1", "90"],
+            "expected": {
+                "type": "exact",
+                "data": "62 F1 90 54 45 53 54 56 49 4E 31 32 33 34 35 36 37 38 39 30"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x01,
+    "security": False,
+    "security_seed": None,
+    },
+    "expected_handler_calls" : [0x22]
+}
+
+test_case_35 = {
+    "test_id" : "TC-4D-09",
+    "description" : "StopRoutine after routine completion",
+    "session" : "extended",
+    "security" : "unlocked",
+    "setup_steps": [
+        {
+            "request": ["31", "01", "FF", "00"],
+            "expected": {
+                "type": "exact",
+                "data": "71 01 FF 00"
+            }
+        }
+    ],
+    "steps": [
+        {
+            "request": ["31", "02", "FF", "00"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 31 24"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x03,
+    "security": True,
+    "security_seed": None,
+    "routine_status" : "COMPLETED",
+    "fault_active" : True
+    },
+    "expected_handler_calls" : [0x31]
+}
+
+test_case_36 = {
+    "test_id" : "TC-4D-10",
+    "description" : "Request routine results before starting",
+    "session" : "extended",
+    "security" : "unlocked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["31", "03", "FF", "00"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 31 24"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x03,
+    "security": True,
+    "security_seed": None,
+    "routine_status" : "NOT_STARTED",
+    "fault_active" : False
+    },
+    "expected_handler_calls" : [0x31]
+}
+
+test_case_37 = {
+    "test_id" : "TC-4D-11",
+    "description" : "Incorrect RoutineControl request length",
+    "session" : "extended",
+    "security" : "unlocked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["31", "01", "FF"],
+            "expected": {
+                "type": "exact",
+                "data": "7F 31 13"
+            }
+        }
+    ],
+    "state_checks": {
+    "session": 0x03,
+    "security": True,
+    "security_seed": None,
+    "routine_status" : "NOT_STARTED",
+    "fault_active" : False
+    },
+    "expected_handler_calls" : [0x31]
+}
+
 test_cases = [test_case_1, test_case_2, test_case_3, test_case_4, test_case_5, test_case_6, test_case_7,test_case_8,
             test_case_9, test_case_10, test_case_11, test_case_12, test_case_13, test_case_14, test_case_15, test_case_16,
             test_case_17, test_case_18, test_case_19, test_case_20, test_case_21, test_case_22, test_case_23, test_case_24,
-            test_case_25, test_case_26]
+            test_case_25, test_case_26,test_case_27, test_case_28, test_case_29, test_case_30, test_case_31, test_case_32, test_case_33,
+            test_case_34, test_case_35, test_case_36, test_case_37]
 
 def run_test_case(test_case, ecu_environment):
 
