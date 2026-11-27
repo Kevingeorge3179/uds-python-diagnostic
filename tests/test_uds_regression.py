@@ -1039,11 +1039,33 @@ test_case_37 = {
     "expected_handler_calls" : [0x31]
 }
 
+test_case_38 = {
+    "test_id" : "TC-4D-12",
+    "description" : "RoutineControl unsupported sub-function",
+    "session" : "extended",
+    "security" : "unlocked",
+    "setup_steps": [],
+    "steps": [
+        {
+            "request": ["31", "04", "FF", "00"],
+            "expected": {"type": "exact", "data": "7F 31 12"}
+        }
+    ],
+    "state_checks": {
+    "session": 0x03,
+    "security": True,
+    "security_seed": None,
+    "routine_status" : "NOT_STARTED",
+    "fault_active" : False
+    },
+    "expected_handler_calls" : [0x31]
+}
+
 test_cases = [test_case_1, test_case_2, test_case_3, test_case_4, test_case_5, test_case_6, test_case_7,test_case_8,
             test_case_9, test_case_10, test_case_11, test_case_12, test_case_13, test_case_14, test_case_15, test_case_16,
             test_case_17, test_case_18, test_case_19, test_case_20, test_case_21, test_case_22, test_case_23, test_case_24,
             test_case_25, test_case_26,test_case_27, test_case_28, test_case_29, test_case_30, test_case_31, test_case_32, test_case_33,
-            test_case_34, test_case_35, test_case_36, test_case_37]
+            test_case_34, test_case_35, test_case_36, test_case_37, test_case_38]
 
 def run_test_case(test_case, ecu_environment):
 
